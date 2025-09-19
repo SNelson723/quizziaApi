@@ -21,17 +21,28 @@ def create():
   print("Creating")
   conn = sqlite3.connect(db_path)
   c = conn.cursor()
+  # c.execute('''
+  #           DROP TABLE IF EXISTS users
+  #           ''')
   c.execute('''
             CREATE TABLE IF NOT EXISTS users(
               id INTEGER PRIMARY KEY AUTOINCREMENT,
-              full_name TEXT NOT NULL,
-              first_name TEXT,
-              last_name TEXT,
+              username TEXT UNIQUE NOT NULL,
+              full_name TEXT,
               picture TEXT,
               email TEXT NOT NULL UNIQUE,
-              password TEXT -- can be NULL if OAuth user
+              password TEXT
             )
             ''')
+  
+  # c.execute('''
+  #             CREATE TABLE IF NOT EXISTS messages(
+  #               user_id INTEGER REFERENCES users(id),
+  #               message TEXT,
+  #               timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                
+  #             )
+  #           ''')
   
   conn.commit()
   
