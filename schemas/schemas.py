@@ -10,6 +10,12 @@ class User(BaseModel):
     password: str
     email: str
     full_name: str
+
+class GoogleUser(BaseModel):
+    username: str
+    email: str
+    full_name: str
+    picture: str
     
 class Token(BaseModel):
     access_token: str

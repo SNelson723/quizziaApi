@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from schemas.schemas import User
+from schemas.schemas import User, GoogleUser
 from db.db import get_db_connection
 from passlib.context import CryptContext
 from utils import generate_token
@@ -12,6 +12,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 @login.post('/login')
 def login_user(request: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db_connection)):
     cursor = db.cursor()
+    print("Login attempt for user:", request.username + "howdy", request.password)
     try:      
         cursor.execute("SELECT * FROM users WHERE username = ?", (request.username,))
         column_names = [desc[0] for desc in cursor.description]
@@ -69,12 +70,29 @@ def create_user(request: User, db=Depends(get_db_connection)):
 
         hashed_password = pwd_context.hash(request.password)
         cursor.execute(
-            "INSERT INTO users (username, password, email, username) VALUES (?, ?, ?, ?)",
-            (request.username, hashed_password, request.email)
+            "INSERT INTO users (username, password, email, full_name) VALUES (?, ?, ?, ?)",
+            (request.username, hashed_password, request.email, request.full_name)
         )
         db.commit()
+        
+        cursor.execute("SELECT * FROM users WHERE username = ?", (request.username,))
+        column_names = [desc[0] for desc in cursor.description]
+        user = cursor.fetchone()
+        user_data = dict(zip(column_names, user))
 
-        return {"success": True, "error": 0}
+        return {
+          "success": True, 
+          "error": 0, 
+          "user": {
+              'id': user_data['id'],
+              'username': user_data['username'], 
+              'email': user_data['email'], 
+              'full_name': user_data['full_name'],
+              'first_name': user_data.get('first_name', ''),
+              'last_name': user_data.get('last_name', ''),
+              'picture': user_data.get('picture', '')
+          }, 
+        }
     except Exception as e:
         return JSONResponse(status_code=400, content={"success": False, "error": 1, "msg": str(e)})
     finally:
@@ -106,29 +124,80 @@ def logout_user(response: Response):
     return {"error": 0, "success": True, "message": "Logged out successfully"}
 
 @login.post("/google_login")
-def google_login(email: str, db=Depends(get_db_connection)):
+def google_login(request: GoogleUser, db=Depends(get_db_connection)):
     cursor = db.cursor()
     try:      
-        # Get the user by email
-        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        cursor.execute("SELECT * FROM users WHERE email = ?", (request.email,))
+        column_names = [desc[0] for desc in cursor.description]
         user = cursor.fetchone()
         
-        # If no user is found, return an error response
+        # If no user is found, insert the new user then fetch the user again to send back the user data
         if user is None:
-            return JSONResponse(status_code=401, content={"success": False, "error": 2, "authenticated": False})
+            cursor.execute(
+                "INSERT INTO users (username, email, full_name, picture) VALUES (?, ?, ?, ?)",
+                (request.username, request.email, request.full_name, request.picture,)
+            )
+            db.commit()
+            
+        cursor.execute("SELECT * FROM users WHERE full_name = ? AND email = ?", (request.full_name, request.email,))
+        column_names = [desc[0] for desc in cursor.description]
+        user = cursor.fetchone()
           
-        # Generate a token for the user => the generate_token function creates a JWT token with the user's username
         access_token = generate_token(data={"username": user['username']})
+        user_data = dict(zip(column_names, user))
         
         return {
           "access_token": access_token, 
+          "token_type": "bearer", 
+          "user": {
+              'id': user_data['id'],
+              'username': user_data['username'], 
+              'email': user_data['email'], 
+              'full_name': user_data['full_name'],
+              'first_name': user_data.get('first_name', ''),
+              'last_name': user_data.get('last_name', ''),
+              'picture': user_data.get('picture', '')
+          }, 
           "success": True, 
           "error": 0
         }
     except Exception as e:
         return JSONResponse(status_code=401, content={"success": False, "error": 1, "msg": str(e)})
     finally:
-        # Ensure the cursor is closed even if an error occurs
         if cursor:
             cursor.close()
-  
+
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, email, full_name, picture) VALUES (?, ?, ?, ?)",
+            (request.username, request.email, request.full_name, request.picture,)
+        )
+        db.commit()
+        
+        cursor.execute("SELECT * FROM users WHERE email = ?", (request.email,))
+        column_names = [desc[0] for desc in cursor.description]
+        user = cursor.fetchone()
+        
+        access_token = generate_token(data={"username": user['username']})
+        user_data = dict(zip(column_names, user))
+
+        return {
+          "access_token": access_token, 
+          "token_type": "bearer", 
+          "user": {
+              'id': user_data['id'],
+              'username': user_data['username'], 
+              'email': user_data['email'], 
+              'full_name': user_data['full_name'],
+              'first_name': user_data.get('first_name', ''),
+              'last_name': user_data.get('last_name', ''),
+              'picture': user_data.get('picture', '')
+          }, 
+          "success": True, 
+          "error": 0
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": 1, "msg": str(e)})
+    finally:
+        cursor.close()
